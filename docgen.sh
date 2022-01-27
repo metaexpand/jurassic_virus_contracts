@@ -1,0 +1,1 @@
+npx solidity-docgen --solc-module solc-0.8 -t ./docs/templates
