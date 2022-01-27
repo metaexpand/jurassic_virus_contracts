@@ -637,6 +637,11 @@
         "internalType": "uint256",
         "name": "nftID",
         "type": "uint256"
+      },
+      {
+        "internalType": "uint256",
+        "name": "bets",
+        "type": "uint256"
       }
     ],
     "name": "positiveFight",

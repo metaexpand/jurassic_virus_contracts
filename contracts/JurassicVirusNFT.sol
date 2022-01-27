@@ -8,7 +8,6 @@ import "@openzeppelin/contracts/utils/Counters.sol";
 import "@openzeppelin/contracts/utils/structs/EnumerableSet.sol";
 
 import "./IERC20Control.sol";
-
 import "hardhat/console.sol";
 
 ///
@@ -173,6 +172,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         isNFTOwner = (tokenOwner == owner);
     }
 
+
     /// @dev mint function
     function mintToAddress(address purchaseUser, uint256 amount) private {
         EnumerableSet.UintSet storage nftSet = ownedNFTs[purchaseUser];
@@ -224,24 +224,57 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
     /// GameFi Related
     ////////////////////////////////////////////////////////////////////////
     ////////////////////////////////////////////////////////////////////////
-    function random(uint256 randomSeed, uint256 lrange, uint256 mrange) internal returns (uint) {
-        randNonce++;
-        uint256 randomnumber = uint(keccak256(abi.encodePacked(randNonce, randomSeed, msg.sender ,block.timestamp, block.difficulty))) % (mrange - lrange + 1);
-        randomnumber = randomnumber + lrange;
-        return randomnumber;
+
+    /// @dev claim token(after claim, need to withdraw to wallet)
+    /// @param nftID the one try to claim TOKEN
+    /// @param triggerFight true=trigger fight, false=no
+    function claimRewards(uint256 nftID, bool triggerFight) public {
+        // ((2/86400) * (time2-time1)));
+        require(isOwner(nftID, msg.sender), "only owner can claim");
+
+        pureClaim(nftID);
+
+        if (triggerFight) {
+            uint256 mode = modeOfNFT[nftID];
+            if (mode == 2) {
+                _fight(nftID);
+            }
+        }
     }
 
-
-    /// @dev
+    /// @dev query how much token needed for next level
     function queryNextLevelTokenRequire(uint256 nftID) public view returns (uint256 requirement) {
         uint256 currentLevel = levelOfNFTs[nftID];
         requirement = requiredUpdateTokens(currentLevel + 1);
     }
 
-
-    function positiveFight(uint256 nftID) public {
+    /// @param nftID token id
+    /// @param nMode 0=not start, 1=normal, 2=fighting
+    /// @param bets lowest bet
+    function startMode(uint256 nftID, uint256 nMode, uint256 bets) public {
+        /// require token owner
         require(isOwner(nftID, msg.sender), "only owner can change mode");
+
+        _updateBets(nftID, bets);
+
+        bool isChanged = _changeMode(nftID, nMode);
+        if (isChanged) {
+            if (nMode == 2) {
+                _fight(nftID);
+            }
+        }
+        emit CommonEvent(msg.sender, 6, nftID, 0, 0, nMode, block.timestamp);
+    }
+
+    /// @dev start fight
+    /// @param nftID the owner's nft trying to fight
+    function positiveFight(uint256 nftID, uint256 bets) public {
+        require(isOwner(nftID, msg.sender), "only owner can change mode");
+
+        _updateBets(nftID, bets);
+
         _fight(nftID);
+
     }
 
     /// @dev query how many token needed to upgrade
@@ -276,10 +309,12 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         level = levelOfNFTs[nftID];
     }
 
+    /// @dev query the next level of NFT
     function queryNextLevel(uint256 nftID) public view returns(uint256 nextLevel) {
         nextLevel = queryLevel(nftID) + 1;
 
     }
+
     // @dev try to update NFT level
     // @param nftID the token want to update
     function updateLevel(uint256 nftID, uint256 bets) public {
@@ -287,7 +322,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         require(isOwner(nftID, msg.sender), "only owner can update");
         require(isUpgradeable(nftID), "can't upgrade anymore");
         
-
         uint256 targetLevel = queryNextLevel(nftID);
         payForUpgrade(nftID, targetLevel);
         // random ability order
@@ -297,6 +331,181 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         // emit LevelUPEvent(nftID, currentLevel, currentLevel + 1, block.timestamp);
         emit CommonEvent(msg.sender, 5, nftID, 0, 0, targetLevel, block.timestamp);
     }
+
+    /// @dev query how many token can claim for rewards
+    /// @param nftID target nft 
+    function queryClaimableRewards(uint256 nftID) public view returns(uint256 totalRewards) {
+
+        uint256 perDayAmount = calculatePerDayRewards(nftID);
+
+        uint256 lastUpdateTime = miningTimestamp[nftID];
+
+        uint256 rewards = (perDayAmount*10**18);
+
+        uint256 rewardsPerDay = rewards / 86400;
+
+        totalRewards = (rewardsPerDay * (block.timestamp - lastUpdateTime)); 
+
+    }
+
+    /// @dev calculate rewards
+    function calculatePerDayRewards(uint256 nftID) public view returns(uint256 rewardsPerDay) {
+
+        uint256 mode = modeOfNFT[nftID];
+        uint256 level = levelOfNFTs[nftID];
+
+        if (mode == 1) {
+            rewardsPerDay = level + 2;
+        } else if (mode == 2) {
+            if (level == 1) {
+                rewardsPerDay = 5;
+            }
+            else if (level == 2) {
+                rewardsPerDay = 8;
+            }
+            else if (level == 3) {
+                rewardsPerDay = 10;
+            }
+            else if (level == 4) {
+                rewardsPerDay = 15;
+            }
+            else if (level == 5) {
+                rewardsPerDay = 20;
+            }
+        }
+        rewardsPerDay = rewardsPerDay * 10 ** 18;
+    }
+
+
+    /// @dev check ability of the NFT
+    /// @param nftID query target
+    function queryAbility(uint256 nftID) public view returns(Ability memory ability) {
+        // require(_exists(nftID), "require exists!");
+        ability = abilityOfNFT[nftID];
+    }
+
+
+
+    /// @dev query how many points user can be used to assign
+    /// @param user query user
+    function queryPoints(address user) external view returns (uint256 points){
+        points = nftPoints[user];
+    }
+
+
+    /// @dev recharge into NFT
+    /// @param nftID the nft
+    /// @param totalFee charge amount
+    function recharge(uint256 nftID, uint256 totalFee, uint256 bets) public {
+    
+        address chargeUser = msg.sender;
+        require(totalFee % (100 * 10 ** 18) == 0, "require % 100 == 0");
+
+        uint256 walletBalance = IERC20(_TOKEN).balanceOf(chargeUser);
+        require(walletBalance >= totalFee, "insufficient token balance");
+        IERC20(_TOKEN).transferFrom(chargeUser, address(this), totalFee);
+        tokenBalance[nftID] += totalFee;
+
+        startMode(nftID, 2, bets);
+        // emit ChargeEvent(chargeUser, nftID, amount, block.timestamp);
+        emit CommonEvent(chargeUser, 3, nftID, 0, totalFee, 0, block.timestamp);
+
+    }
+
+
+    /// @dev withdraw token
+    function withdrawToken(uint256 nftID, uint256 withdrawAmount) public {
+        address withdrawUser = msg.sender;
+        uint256 balance = tokenBalance[nftID];
+
+        if (withdrawAmount > 0 && withdrawAmount <= balance) {
+            address nftOwner = ownerOf(nftID);
+            if (nftOwner == withdrawUser) {
+                IERC20Control(_TOKEN).mint(withdrawUser, withdrawAmount);
+                tokenBalance[nftID] = balance - withdrawAmount;
+
+                uint256 mode = modeOfNFT[nftID];
+                if (mode == 2 && queryFightBalance(nftID) < fightBet[nftID]) {
+                    // reset status
+                    startMode(nftID, 0, 0);
+                } 
+                emit CommonEvent(withdrawUser, 1, 0, 0, withdrawAmount, 0, block.timestamp);
+            }
+            // emit WithdrawEvent(withdrawUser, totalFee, block.timestamp);
+
+        }
+    }
+
+    /// @dev Burn nft to get points
+    /// @param nftID burned NFT id
+    function burnNFT(uint256 nftID) external {
+        // is owner
+        require(isOwner(nftID, msg.sender), "Only owner can burn"); 
+        uint256 BURN_POINTS = 10;
+        nftPoints[msg.sender] += BURN_POINTS;
+        burn(nftID);
+        EnumerableSet.UintSet storage nftSets = ownedNFTs[msg.sender];
+        nftSets.remove(nftID);
+        // emit BurnNFTEvent(nftID, block.timestamp);
+        emit CommonEvent(msg.sender, 7, nftID, 0, 0, 0, block.timestamp);
+    }
+
+    /// @dev query which mode current is
+    /// @param nftID target nft 
+    function queryMode(uint256 nftID) external view returns (uint256 mode){
+        mode = modeOfNFT[nftID];
+    }
+
+    /// @dev query total fight balance (include reward's and charged)
+    /// @param nftID target nft 
+    function queryFightBalance(uint256 nftID) public view returns(uint256 balance) {
+        balance = tokenFightBalance[nftID] + tokenBalance[nftID];
+    }
+
+    /// @dev query query balance only for fight
+    /// @param nftID target nft 
+    function queryTokenFightBalance(uint256 nftID) public view returns(uint256 balance) {
+        balance = tokenFightBalance[nftID];
+    }
+
+    /// @dev query charged balance (can withdraw)
+    /// @param nftID target nft 
+    function queryTokenBalance(uint256 nftID) external view returns (uint256 balance){
+        balance = tokenBalance[nftID];
+    }
+
+    /// @dev query how much pay or get after fight
+    /// @param nftID target nft 
+    function queryBounty(uint256 nftID) external view returns (uint bounty) {
+        bounty = fightBet[nftID];
+    }
+
+    /// @dev 
+    /// @param ability1Points strength
+    /// @param ability2Points explosive
+    /// @param ability3points agility
+    function assignAllEnergy(uint256 nftID, uint256 ability1Points, uint256 ability2Points, uint256 ability3points) external {
+        address user = msg.sender;
+        // approve owner
+        require(nftPoints[user] >= (ability1Points + ability2Points + ability3points), "Points is not enough");
+        // assign ability
+        Ability storage nftAbility = abilityOfNFT[nftID];
+        if (ability1Points > 0) {
+            nftAbility.lethality += ability1Points;
+        }
+        if (ability2Points > 0) {
+            nftAbility.infectivity += ability2Points;
+        }
+        
+        if (ability3points > 0) {
+            nftAbility.resistance += ability3points;
+        }
+        // remove points
+        nftPoints[user] -= (ability1Points + ability2Points + ability3points);
+    }
+
+
+
 
 
     function payForUpgrade(uint256 nftID, uint256 level) internal {
@@ -312,15 +521,9 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
     }
 
 
-
-    function calculateTransferedToken(uint256 token) private pure returns(uint256 realTokens) {
-        realTokens = token * 10 ** 18;
-    }
-
     function isUpgradeable(uint256 nftID) private returns(bool canUpgrade) {
         canUpgrade = !(queryNextLevel(nftID) > 5);
     }
-
 
     function _upgrade(uint256 nftID) private returns(uint256 nextLevelToken) {
 
@@ -348,7 +551,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         // console.log("after update,  lethality: %s, infectivity: %s, resistance: %s", ability.lethality, ability.infectivity, ability.resistance);
     }
 
-
     function transferTo(uint256 tokenAmount, address sender, address target) private {
         require(tokenAmount > 0, "need to be more than 0");
         // uint256 actualFee = calculateTransferedToken(tokenAmount);
@@ -361,23 +563,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         IERC20Control(_TOKEN).burn(amount);
     }
 
-    /// @param nftID token id
-    /// @param nMode 0=not start, 1=normal, 2=fighting
-    /// @param bets lowest bet
-    function startMode(uint256 nftID, uint256 nMode, uint256 bets) public {
-        /// require token owner
-        require(isOwner(nftID, msg.sender), "only owner can change mode");
 
-        _updateBets(nftID, bets);
-
-        bool isChanged = _changeMode(nftID, nMode);
-        if (isChanged) {
-            if (nMode == 2) {
-                _fight(nftID);
-            }
-        }
-        emit CommonEvent(msg.sender, 6, nftID, 0, 0, nMode, block.timestamp);
-    }
 
 
     function _changeMode(uint256 nftID, uint256 nMode) private returns (bool isChanged) {
@@ -424,8 +610,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         uint256 requireLevelGap = decideLevelGap(nftID);
         // search opponent （level / bet amount match)
         (uint256 opponentNFT, uint256 finalBets, bool findOpponent) = searchForOpponent(nftID, requireLevelGap);
-        // // if it's not 0
-        // // opponent level confirmed
         // console.log("fight status -- [NFT: %s, OpponentNFT: %s, Bets: %s]", nftID, opponentNFT, finalBets);
         if (findOpponent) {
             emit CommonEvent(msg.sender, 8, nftID, opponentNFT, 0, 1, block.timestamp);
@@ -433,7 +617,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         } else {
             emit CommonEvent(msg.sender, 8, nftID, 0, 0, 0, block.timestamp);
         }
-
     }
 
 
@@ -446,7 +629,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         } else if (opponentLevelSeed > 90 && opponentLevelSeed < 100) {
             requireLevelGap = 2;
         }
-
     }
 
     /// @dev search for opponents
@@ -601,26 +783,12 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
         }
     }
 
-
-
-    /// @dev claim token(after claim, need to withdraw to wallet)
-    /// @param nftID the one try to claim TOKEN
-    /// @param triggerFight true=trigger fight, false=no
-    function claimRewards(uint256 nftID, bool triggerFight) public {
-
-        // ((2/86400) * (time2-time1)));
-        require(isOwner(nftID, msg.sender), "only owner can claim");
-
-        pureClaim(nftID);
-
-        if (triggerFight) {
-            uint256 mode = modeOfNFT[nftID];
-            if (mode == 2) {
-                _fight(nftID);
-            }
-        }
+    function random(uint256 randomSeed, uint256 lrange, uint256 mrange) internal returns (uint) {
+        randNonce++;
+        uint256 randomnumber = uint(keccak256(abi.encodePacked(randNonce, randomSeed, msg.sender ,block.timestamp, block.difficulty))) % (mrange - lrange + 1);
+        randomnumber = randomnumber + lrange;
+        return randomnumber;
     }
-
 
     function pureClaim(uint256 nftID) private {
         
@@ -641,175 +809,6 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
             emit CommonEvent(nftOwner, 1, 0, 0, totalRewards, 0, block.timestamp);
         }
     }
-
-
-    function queryClaimableRewards(uint256 nftID) public view returns(uint256 totalRewards) {
-
-        uint256 perDayAmount = calculatePerDayRewards(nftID);
-
-        uint256 lastUpdateTime = miningTimestamp[nftID];
-
-        uint256 rewards = (perDayAmount*10**18);
-
-        uint256 rewardsPerDay = rewards / 86400;
-
-        totalRewards = (rewardsPerDay * (block.timestamp - lastUpdateTime)); 
-
-    }
-
-    /// @dev calculate rewards
-    function calculatePerDayRewards(uint256 nftID) public view returns(uint256 rewardsPerDay) {
-
-        uint256 mode = modeOfNFT[nftID];
-        uint256 level = levelOfNFTs[nftID];
-
-        if (mode == 1) {
-            rewardsPerDay = level + 2;
-        } else if (mode == 2) {
-            if (level == 1) {
-                rewardsPerDay = 5;
-            }
-            else if (level == 2) {
-                rewardsPerDay = 8;
-            }
-            else if (level == 3) {
-                rewardsPerDay = 10;
-            }
-            else if (level == 4) {
-                rewardsPerDay = 15;
-            }
-            else if (level == 5) {
-                rewardsPerDay = 20;
-            }
-        }
-        rewardsPerDay = rewardsPerDay * 10 ** 18;
-    }
-
-
-    /// @dev check ability of the NFT
-    /// @param nftID query target
-    function queryAbility(uint256 nftID) public view returns(Ability memory ability) {
-        // require(_exists(nftID), "require exists!");
-        ability = abilityOfNFT[nftID];
-    }
-
-
-
-    /// @dev query how many points user can be used to assign
-    /// @param user query user
-    function queryPoints(address user) external view returns (uint256 points){
-        points = nftPoints[user];
-    }
-
-    /// @dev recharge into NFT
-    /// @param nftID the nft
-    /// @param totalFee charge amount
-    function recharge(uint256 nftID, uint256 totalFee, uint256 bets) public {
-    
-        address chargeUser = msg.sender;
-        require(totalFee % (100 * 10 ** 18) == 0, "require % 100 == 0");
-
-        uint256 walletBalance = IERC20(_TOKEN).balanceOf(chargeUser);
-        require(walletBalance >= totalFee, "insufficient token balance");
-        IERC20(_TOKEN).transferFrom(chargeUser, address(this), totalFee);
-        tokenBalance[nftID] += totalFee;
-
-        startMode(nftID, 2, bets);
-        // emit ChargeEvent(chargeUser, nftID, amount, block.timestamp);
-        emit CommonEvent(chargeUser, 3, nftID, 0, totalFee, 0, block.timestamp);
-
-    }
-
-
-    /// @dev withdraw token
-    function withdrawToken(uint256 nftID, uint256 withdrawAmount) public {
-
-        address withdrawUser = msg.sender;
-        uint256 balance = tokenBalance[nftID];
-
-        if (withdrawAmount > 0 && withdrawAmount <= balance) {
-            address nftOwner = ownerOf(nftID);
-            if (nftOwner == withdrawUser) {
-                IERC20Control(_TOKEN).mint(withdrawUser, withdrawAmount);
-                tokenBalance[nftID] = balance - withdrawAmount;
-
-                uint256 mode = modeOfNFT[nftID];
-                if (mode == 2 && queryFightBalance(nftID) < fightBet[nftID]) {
-                    // reset status
-                    startMode(nftID, 0, 0);
-                } 
-            }
-            // emit WithdrawEvent(withdrawUser, totalFee, block.timestamp);
-            // emit CommonEvent(withdrawUser, 1, 0, 0, totalFee, 0, block.timestamp);
-        }
-    }
-
-    /// @dev Burn nft to get points
-    /// @param nftID burned NFT id
-    function burnNFT(uint256 nftID) external {
-        // is owner
-        require(isOwner(nftID, msg.sender), "Only owner can burn"); 
-        uint256 BURN_POINTS = 10;
-        nftPoints[msg.sender] += BURN_POINTS;
-        burn(nftID);
-        EnumerableSet.UintSet storage nftSets = ownedNFTs[msg.sender];
-        nftSets.remove(nftID);
-        // emit BurnNFTEvent(nftID, block.timestamp);
-        emit CommonEvent(msg.sender, 7, nftID, 0, 0, 0, block.timestamp);
-    }
-
-    /// @dev query which mode current is
-    /// @param nftID target nft 
-    function queryMode(uint256 nftID) external view returns (uint256 mode){
-        mode = modeOfNFT[nftID];
-    }
-
-    function queryFightBalance(uint256 nftID) public view returns(uint256 balance) {
-        balance = tokenFightBalance[nftID] + tokenBalance[nftID];
-    }
-
-    function queryTokenFightBalance(uint256 nftID) public view returns(uint256 balance) {
-        balance = tokenFightBalance[nftID];
-    }
-
-    function queryTokenBalance(uint256 nftID) external view returns (uint256 balance){
-        balance = tokenBalance[nftID];
-    }
-
-    function queryBounty(uint256 nftID) external view returns (uint bounty) {
-        bounty = fightBet[nftID];
-    }
-
-
-    /// @dev 
-    /// @param ability1Points strength
-    /// @param ability2Points explosive
-    /// @param ability3points agility
-    function assignAllEnergy(uint256 nftID, uint256 ability1Points, uint256 ability2Points, uint256 ability3points) external {
-        address user = msg.sender;
-        // approve owner
-
-        // ability.lethality += ability1;
-        // ability.infectivity += ability2;
-        // ability.resistance += ability3;
-
-        require(nftPoints[user] >= (ability1Points + ability2Points + ability3points), "Points is not enough");
-        // assign ability
-        Ability storage nftAbility = abilityOfNFT[nftID];
-        if (ability1Points > 0) {
-            nftAbility.lethality += ability1Points;
-        }
-        if (ability2Points > 0) {
-            nftAbility.infectivity += ability2Points;
-        }
-        
-        if (ability3points > 0) {
-            nftAbility.resistance += ability3points;
-        }
-        // remove points
-        nftPoints[user] -= (ability1Points + ability2Points + ability3points);
-    }
-
 
     /// Admin Functions
     //////////////////////////////////////////////////////////////////////////////////////////
