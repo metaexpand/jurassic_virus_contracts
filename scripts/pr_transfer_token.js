@@ -28,30 +28,6 @@ async function main() {
     let token = await tokenFactory.attach("0x89049c98245D8cF6CBEE7fcE673272653b45c1A0");
     // let token = await tokenFactory.deploy();
     console.log("Token address:", token.address);
-
-    console.log("update token address", await nft.updateToken(token.address));
-
-    console.log("grant miner role:", await token.grantRole(token.getMinterRole(), nft.address));
-    console.log("grant burner role", await token.grantRole(token.getBurnerRole(), nft.address));
-
-    console.log(await token.grantRole(token.getMinterRole(), "0xf46B1E93aF2Bf497b07726108A539B478B31e64C"));
-    // 0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81  张振
-    // transfer test token
-    // let tran = BigInt(10000 * 10 ** 18);
-    // await badgeToken.mint("0x274fD8C49DECe3C474D182a290D6b2F61d6Dce36", tran);
-    // await badgeToken.mint("0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81", tran);
-
-    console.log("");
-    console.log("npx hardhat console --network rinkeby");
-    console.log("");  
-    console.log("const punkFactory = await ethers.getContractFactory(\"PunkRunnerNFT\");");
-    console.log("");
-    console.log("const ct = await punkFactory.attach(\""+nft.address+"\");");
-    console.log("");
-    console.log("await ct.purchaseNFT(5, {from:\""+deployer.address+"\", value:ethers.utils.parseEther(\"0.03\")});");
-    console.log("");
-
-
     // console.log(await badgeToken.grantRole(badgeToken.getMinterRole(), "0xf46B1E93aF2Bf497b07726108A539B478B31e64C"));
     // console.log(await badgeToken.grantRole(badgeToken.getMinterRole(), "0xe28da41CC50F1205072aaa400cDc28B31Bc1c4e0"));
     // console.log(await badgeToken.grantRole(badgeToken.getBurnerRole(), "0xe28da41CC50F1205072aaa400cDc28B31Bc1c4e0"));
@@ -59,12 +35,12 @@ async function main() {
     // 0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81  张振
     // transfer test token
     let tran = BigInt(10000 * 10 ** 18);
-    
-    // 
+    // console.log(await token.grantRole(token.getMinterRole(), "0xf46B1E93aF2Bf497b07726108A539B478B31e64C"));
     // await badgeToken.mint("0x274fD8C49DECe3C474D182a290D6b2F61d6Dce36", tran);
-    await token.mint("0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81", tran);
-    await token.mint("0xf46B1E93aF2Bf497b07726108A539B478B31e64C", tran);
+    console.log(await token.mint("0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81", tran));
+    console.log(await token.mint("0xf46B1E93aF2Bf497b07726108A539B478B31e64C", tran));
     
+    console.log("done");
     // tao ge
     // await badgeToken.mint("0x801204b07A772Ac656E854B0091f96Cbb2736810", tran);
 

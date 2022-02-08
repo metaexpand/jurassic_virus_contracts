@@ -18,7 +18,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
     /// @dev Library
     ////////////////////////////////////////////
     using EnumerableSet for EnumerableSet.UintSet;
-
+    
     /// @dev structs of the Game.
     ////////////////////////////////////////////
     struct Ability {
@@ -111,7 +111,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
 
     // bool private REVEALED = false;
 
-    string private BASE_URI = "https://id/";
+    string private BASE_URI = "https://gateway.pinata.cloud/ipfs/QmbEo9Lty8b1rmuEQ9jJR6imZrk7cC46K9Vgsqpjxdso8m/";
 
     /// functions
     ////////////////////////////////////////////////////////////////////////
@@ -129,7 +129,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
     function tokenURI(uint256 tokenId) public view override(ERC721) returns (string memory) {
         require(_exists(tokenId), "token is not exist!");
         uint256 tokenLevel = levelOfNFTs[tokenId];
-        return string(abi.encodePacked(BASE_URI, Strings.toString(tokenLevel), ".json"));
+        return string(abi.encodePacked(BASE_URI, Strings.toString(tokenLevel)));
     }
 
 
@@ -336,15 +336,14 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
     /// @param nftID target nft 
     function queryClaimableRewards(uint256 nftID) public view returns(uint256 totalRewards) {
 
-        uint256 perDayAmount = calculatePerDayRewards(nftID);
-
+        uint256 perDayRewards = calculatePerDayRewards(nftID);
         uint256 lastUpdateTime = miningTimestamp[nftID];
-
-        uint256 rewards = (perDayAmount*10**18);
-
-        uint256 rewardsPerDay = rewards / 86400;
-
-        totalRewards = (rewardsPerDay * (block.timestamp - lastUpdateTime)); 
+        if (lastUpdateTime == 0) {
+            totalRewards = 0;
+            return totalRewards;
+        }
+        uint256 secondRewards = perDayRewards / 86400;
+        totalRewards = (secondRewards * (block.timestamp - lastUpdateTime)); 
 
     }
 
@@ -768,6 +767,7 @@ contract JurassicVirusNFT is ERC721Burnable, AccessControl {
             modeOfNFT[nftID] = 0;
         }
 
+        loseTokens = bets;
     }
 
     function minusBalance(uint256 nftID, uint256 amount) private {
