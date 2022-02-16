@@ -37,9 +37,13 @@ async function main() {
     let tran = BigInt(10000 * 10 ** 18);
     // console.log(await token.grantRole(token.getMinterRole(), "0xf46B1E93aF2Bf497b07726108A539B478B31e64C"));
     // await badgeToken.mint("0x274fD8C49DECe3C474D182a290D6b2F61d6Dce36", tran);
-    console.log(await token.mint("0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81", tran));
-    console.log(await token.mint("0xf46B1E93aF2Bf497b07726108A539B478B31e64C", tran));
-    
+    // console.log(await token.mint("0xBbe14Ab2F06Ef9B33DA7da789005b0CD669C7F81", tran));
+    // console.log(await token.mint("0xf46B1E93aF2Bf497b07726108A539B478B31e64C", tran));
+    // console.log(await token.mint("0xAA9217C77993Bd514Bec6A23DB295F167AA09adb", tran));
+    console.log(await token.mint("0xaE0482C739B8B6F41833dC6945E1453Fa355b5c6", tran));
+    console.log(await token.mint("0xaE0482C739B8B6F41833dC6945E1453Fa355b5c6", tran));
+
+
     console.log("done");
     // tao ge
     // await badgeToken.mint("0x801204b07A772Ac656E854B0091f96Cbb2736810", tran);
